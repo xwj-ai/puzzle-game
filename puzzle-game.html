@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>小咪拼图 🐱</title>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --primary: #6c5ce7;
+      --primary-light: #a29bfe;
+      --accent: #fd79a8;
+      --text: #2d3436;
+      --text-light: #636e72;
+      --success: #00b894;
+      --danger: #e74c3c;
+      --shadow: 0 4px 20px rgba(0,0,0,0.08);
+      --tile-transition-duration: 0.28s;
+      --tile-easing: cubic-bezier(0.4, 0, 0.2, 1);
+      --gap: 3px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    html, body { overscroll-behavior: none; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: var(--bg);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      color: var(--text);
+      user-select: none;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2px;
+    }
+
+    .subtitle { color: var(--text-light); font-size: 0.82rem; margin-bottom: 10px; }
+
+    .controls {
+      display: flex; gap: 6px; margin-bottom: 10px;
+      flex-wrap: wrap; justify-content: center; align-items: center;
+      max-width: 500px;
+    }
+    .controls-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; width: 100%; }
+
+    select, button {
+      padding: 6px 12px; border-radius: 10px; border: none;
+      font-size: 0.84rem; cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+
+    select { background: var(--card); border: 2px solid #e0e0e0; color: var(--text); }
+    select:focus { outline: 2px solid var(--primary-light); }
+
+    button { background: var(--primary); color: white; font-weight: 600; }
+    button:hover { background: #5b4cdb; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(108,92,231,0.3); }
+    button:active { transform: translateY(0); }
+    button.accent-btn { background: var(--accent); }
+    button.accent-btn:hover { background: #e66b96; box-shadow: 0 4px 12px rgba(253,121,168,0.3); }
+    button.hint-btn { background: #fdcb6e; color: var(--text); }
+    button.hint-btn:disabled, button.hint-btn[disabled] {
+      opacity: 0.5; cursor: not-allowed; filter: grayscale(0.5);
+    }
+    button.undo-btn { background: #0984e3; }
+    button.undo-btn:disabled, button.undo-btn[disabled] {
+      opacity: 0.5; cursor: not-allowed; filter: grayscale(0.5);
+    }
+
+    .stats-bar {
+      width: 100%; max-width: 900px;
+      background: var(--card); padding: 8px 16px 6px;
+      border-radius: 14px; box-shadow: var(--shadow); margin-bottom: 10px;
+    }
+    .stats {
+      display: flex; gap: 16px; justify-content: center;
+    }
+    .stat { text-align: center; flex: 1; }
+    .stat-value { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 0.68rem; color: var(--text-light); margin-top: 1px; }
+    .stat-value.best { color: var(--accent); font-size: 1rem; }
+
+    .progress-track {
+      width: 100%; height: 6px;
+      background: #e8e8e8; border-radius: 3px;
+      margin-top: 8px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--primary), var(--success));
+      border-radius: 3px;
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .game-wrapper {
+      background: var(--card); border-radius: 18px; padding: 10px;
+      box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+
+    .puzzle-area {
+      display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; justify-content: center;
+    }
+
+    .puzzle-grid {
+      position: relative;
+      background: transparent; border-radius: 10px; overflow: hidden;
+    }
+
+    .puzzle-bg {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .puzzle-bg.show { opacity: 1; }
+
+    .puzzle-bg.hint-mode {
+      opacity: 0.85 !important;
+      transition: opacity 0.3s;
+    }
+
+    .tile {
+      position: absolute;
+      overflow: hidden;
+      cursor: grab;
+      transition:
+        transform var(--tile-transition-duration) var(--tile-easing),
+        opacity 0.4s ease;
+      box-sizing: border-box;
+      z-index: 1;
+      will-change: transform;
+      border: none;
+      background: #d0d0d0;
+    }
+    .tile.no-transition {
+      transition: none !important;
+    }
+    .tile.correct {
+      opacity: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .tile:active { cursor: grabbing; }
+    .tile:focus-visible {
+      outline: 3px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+
+    .tile canvas {
+      display: block; width: 100%; height: 100%;
+      pointer-events: none;
+      image-rendering: pixelated;
+    }
+
+    .swap-hint {
+      position: absolute; inset: 0; border-radius: 4px;
+      background: rgba(108,92,231,0.28);
+      border: 2.5px solid rgba(108,92,231,0.85);
+      pointer-events: none; opacity: 0; transition: opacity 0.1s;
+    }
+    .tile.swap-target .swap-hint { opacity: 1; }
+
+    .tile.selected {
+      outline: 3px solid #6c5ce7;
+      outline-offset: -1px;
+      z-index: 10;
+    }
+
+    .tile.just-placed {
+      outline: 3px solid var(--success);
+      outline-offset: -1px;
+      z-index: 5;
+    }
+
+    .num-badge {
+      position: absolute; bottom: 2px; right: 3px;
+      font-size: 0.58rem; color: rgba(255,255,255,0.9);
+      font-weight: 700; pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+      transition: opacity 0.2s;
+    }
+    .num-badge.hidden { opacity: 0; }
+
+    .preview-panel { display: none; flex-direction: column; align-items: center; gap: 8px; }
+    .preview-panel.hint-visible { display: flex; }
+    .preview-label { font-size: 0.76rem; color: var(--text-light); }
+    .preview-image {
+      width: 200px; height: 200px; border-radius: 12px;
+      box-shadow: var(--shadow); border: 3px solid var(--primary-light);
+      object-fit: cover;
+    }
+
+    .tile.wrong {
+      outline: 3px solid var(--danger);
+      outline-offset: -1px;
+      transition: outline 0.15s !important;
+    }
+    .tile.correct-flash {
+      outline: 3px solid var(--success);
+      outline-offset: -1px;
+      transition: outline 0.15s !important;
+    }
+
+    .tile.solid-tile .num-badge { opacity: 0.2; }
+
+    .tile.kb-focus {
+      outline: 3px solid #0984e3;
+      outline-offset: -1px;
+      z-index: 9;
+    }
+
+    .win-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+      backdrop-filter: blur(4px);
+    }
+    .win-overlay.show { opacity: 1; pointer-events: all; }
+    .win-card {
+      background: var(--card); border-radius: 24px; padding: 36px 44px;
+      text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      transform: scale(0.8); transition: transform 0.3s; max-width: 90vw;
+    }
+    .win-overlay.show .win-card { transform: scale(1); }
+    .win-emoji { font-size: 3.5rem; margin-bottom: 10px; animation: bounce 0.6s ease infinite alternate; }
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+    .win-title {
+      font-size: 1.7rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--success), var(--primary));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .win-sub { color: var(--text-light); margin-bottom: 20px; }
+    .win-stats { display: flex; gap: 12px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .win-stat { background: var(--bg); padding: 8px 16px; border-radius: 10px; }
+    .win-stat-val { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+    .win-stat-lbl { font-size: 0.72rem; color: var(--text-light); }
+    .win-new-record {
+      display: none;
+      color: var(--accent); font-weight: 700; font-size: 0.9rem;
+      margin-bottom: 14px; animation: pulse 0.8s ease infinite alternate;
+    }
+    .win-new-record.show { display: block; }
+    @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+    button.restart-btn {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      padding: 10px 28px; font-size: 1rem;
+    }
+
+    .confetti {
+      position: fixed; border-radius: 2px;
+      animation: confetti-fall 3s ease-out forwards; pointer-events: none; z-index: 1001;
+    }
+    @keyframes confetti-fall {
+      0% { transform: translateY(-80px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      h1 { font-size: 1.3rem; }
+      .subtitle { font-size: 0.72rem; margin-bottom: 6px; }
+      .controls { gap: 3px; margin-bottom: 8px; }
+      .controls-row { gap: 4px; }
+      .controls select, .controls button { padding: 5px 8px; font-size: 0.76rem; border-radius: 8px; }
+      .stats-bar { padding: 6px 10px 5px; margin-bottom: 8px; border-radius: 10px; }
+      .stats { gap: 8px; }
+      .stat-value { font-size: 1rem; }
+      .stat-label { font-size: 0.6rem; }
+      .stat-value.best { font-size: 0.88rem; }
+      .game-wrapper { padding: 8px; gap: 6px; border-radius: 14px; }
+      .puzzle-area { gap: 6px; }
+      .preview-panel { flex-direction: row; gap: 6px; }
+      .preview-label { font-size: 0.66rem; }
+      .preview-image { width: 56px; height: 56px; border-width: 2px; border-radius: 8px; }
+      .num-badge { font-size: 0.48rem; }
+      .win-card { padding: 24px 20px; border-radius: 18px; }
+      .win-emoji { font-size: 2.5rem; }
+      .win-title { font-size: 1.3rem; }
+      .win-stats { gap: 6px; }
+      .win-stat { padding: 5px 10px; }
+      .win-stat-val { font-size: 0.95rem; }
+    }
+
+    @media (max-width: 380px) {
+      body { padding: 6px; }
+      h1 { font-size: 1.15rem; }
+      .controls-row { gap: 3px; }
+      .controls select, .controls button { padding: 4px 6px; font-size: 0.72rem; }
+      .stats-bar { padding: 5px 8px 4px; }
+      .stats { gap: 6px; }
+      .stat-value { font-size: 0.9rem; }
+      .game-wrapper { padding: 6px; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧩 小咪拼图</h1>
+  <p class="subtitle">拖拽或点击碎片交换位置 · 还原完整图片</p>
+
+  <div class="controls">
+    <div class="controls-row">
+      <select id="imageSelect" aria-label="选择图片">
+        <option value="cat">🐱 猫咪</option>
+        <option value="landscape">🏔️ 风景</option>
+        <option value="city">🌆 城市</option>
+        <option value="custom" id="customOption" style="display:none">📷 我的图片</option>
+      </select>
+      <button onclick="document.getElementById('fileInput').click()" aria-label="上传自定义图片" title="上传图片">📷 上传</button>
+      <input type="file" id="fileInput" accept="image/*" style="display:none" aria-hidden="true">
+      <select id="difficulty" aria-label="选择难度">
+        <option value="3">3×3 简单</option>
+        <option value="4" selected>4×4 正常</option>
+        <option value="5">5×5 困难</option>
+      </select>
+      <button onclick="PuzzleGame.init()" aria-label="打乱拼图" title="打乱拼图">🔀 打乱</button>
+    </div>
+    <div class="controls-row">
+      <button class="hint-btn" onclick="PuzzleGame.showHint()" aria-label="显示提示（查看完整图片）" title="显示提示">💡 提示</button>
+      <button class="accent-btn" onclick="PuzzleGame.verifyTiles()" aria-label="验证拼图（标出错误位置）" title="验证拼图">🔍 验证</button>
+      <button class="undo-btn" onclick="PuzzleGame.undoMove()" id="undoBtn" disabled aria-label="撤销操作" title="撤销（Ctrl+Z）">↩️ 撤销</button>
+      <button onclick="PuzzleGame.toggleNumbers()" aria-label="显示/隐藏编号" title="编号开关">🔢 编号</button>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stats">
+      <div class="stat"><div class="stat-value" id="moveCount">0</div><div class="stat-label">步数</div></div>
+      <div class="stat"><div class="stat-value" id="timeDisplay">00:00</div><div class="stat-label">用时</div></div>
+      <div class="stat"><div class="stat-value" id="correctCount">0/0</div><div class="stat-label">已归位</div></div>
+      <div class="stat"><div class="stat-value best" id="bestDisplay">-</div><div class="stat-label">最佳</div></div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="game-wrapper">
+    <div class="puzzle-area">
+      <div class="puzzle-grid" id="puzzleGrid" role="grid">
+        <img class="puzzle-bg" id="puzzleBg" alt="完整拼图参考图">
+      </div>
+      <div class="preview-panel">
+        <div class="preview-label">参考图</div>
+        <img class="preview-image" id="previewImg" alt="原图预览">
+      </div>
+    </div>
+  </div>
+
+  <div class="win-overlay" id="winOverlay" role="dialog" aria-modal="true">
+    <div class="win-card">
+      <div class="win-emoji">🎉</div>
+      <div class="win-title">拼图完成！</div>
+      <div class="win-sub">图片完美还原！</div>
+      <div class="win-new-record" id="winNewRecord">🏆 新纪录！</div>
+      <div class="win-stats">
+        <div class="win-stat"><div class="win-stat-val" id="winMoves">0</div><div class="win-stat-lbl">步数</div></div>
+        <div class="win-stat"><div class="win-stat-val" id="winTime">00:00</div><div class="win-stat-lbl">用时</div></div>
+        <div class="win-stat"><div class="win-stat-val" id="winBest">-</div><div class="win-stat-lbl">最佳纪录</div></div>
+      </div>
+      <button class="restart-btn" onclick="PuzzleGame.init()">再来一局 🔄</button>
+    </div>
+  </div>
+
+  <script>
+    const PuzzleGame = (function() {
+      const SRC_SIZE = 600;
+      const GAP = 3;
+      const MAX_HISTORY = 20;
+
+      let state = {
+        gridSize: 4,
+        tiles: [],
+        tileElMap: {},
+        moves: 0,
+        seconds: 0,
+        timerInterval: null,
+        isWin: false,
+        fullImageCanvas: null,
+        imgDataUrl: '',
+        solidSet: new Set(),
+        tileSize: 0,
+        gridPixelSize: 0,
+        showNumbers: false,
+        hintTimeout: null,
+        dragging: null,
+        selectedTile: null,
+        moveHistory: [],
+        hintCooldown: false,
+        kbFocusIdx: -1,
+        posMapCache: null,
+        posMapFrameId: 0
+      };
+
+      function genCat(w, h) {
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        const bg = ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+        bg.addColorStop(0,'#ffeaa7'); bg.addColorStop(1,'#fdcb6e');
+        ctx.fillStyle = bg; ctx.fillRect(0,0,w,h);
+        const cx=w/2, cy=h/2, r=w*0.26;
+        ctx.fillStyle='#fab1a0';
+        ctx.beginPath(); ctx.arc(cx,cy+h*0.04,r,0,Math.PI*2); ctx.fill();
+        const ear=(a,f)=>{
+          ctx.beginPath();
+          ctx.moveTo(cx+Math.cos(a-0.3)*r, cy+h*0.04+Math.sin(a-0.3)*r);
+          ctx.lineTo(cx+Math.cos(a)*r*1.3, cy+h*0.04+Math.sin(a)*r*1.3-h*0.09*f);
+          ctx.lineTo(cx+Math.cos(a+0.3)*r, cy+h*0.04+Math.sin(a+0.3)*r); ctx.fill();
+        };
+        ear(-Math.PI*0.72,1); ear(-Math.PI*0.28,1);
+        ctx.fillStyle='#ffb3ad';
+        ctx.beginPath(); ctx.arc(cx-r*0.12, cy-h*0.05, r*0.08, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx+r*0.12, cy-h*0.05, r*0.08, 0, Math.PI*2); ctx.fill();
+        const eyeY=cy-h*0.02;
+        ctx.fillStyle='#2d3436';
+        ctx.beginPath(); ctx.ellipse(cx-r*0.32,eyeY,r*0.11,r*0.16,-0.1,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cx+r*0.32,eyeY,r*0.11,r*0.16,0.1,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.9)';
+        ctx.beginPath(); ctx.arc(cx-r*0.34-2,eyeY-3,r*0.04,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx+r*0.30-2,eyeY-3,r*0.04,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#e17055';
+        ctx.beginPath(); ctx.moveTo(cx,cy+r*0.14); ctx.lineTo(cx-w*0.008,cy+r*0.23); ctx.lineTo(cx+w*0.008,cy+r*0.23); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='#2d3436'; ctx.lineWidth=w*0.003;
+        for(let side of[-1,1]) for(let off of[-0.18,0,0.18]){
+          ctx.beginPath();
+          ctx.moveTo(cx+side*w*0.03, cy+h*0.13+off*h*0.08);
+          ctx.lineTo(cx+side*w*0.24, cy+h*0.09+off*h*0.11);
+          ctx.stroke();
+        }
+        return c;
+      }
+
+      function genLandscape(w, h) {
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        const sky = ctx.createLinearGradient(0,0,0,h*0.62);
+        sky.addColorStop(0,'#74b9ff'); sky.addColorStop(1,'#a29bfe');
+        ctx.fillStyle=sky; ctx.fillRect(0,0,w,h*0.62);
+        ctx.fillStyle='rgba(255,255,255,0.7)';
+        [[0.15,0.12],[0.55,0.08],[0.8,0.15]].forEach(([px,py])=>{
+          ctx.beginPath(); ctx.arc(w*px,h*py,w*0.06,0,Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(w*px+w*0.05,h*py-h*0.02,w*0.05,0,Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(w*px-w*0.04,h*py+h*0.01,w*0.04,0,Math.PI*2); ctx.fill();
+        });
+        ctx.fillStyle='#ffeaa7';
+        ctx.beginPath(); ctx.arc(w*0.78,h*0.18,w*0.1,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(253,203,110,0.3)';
+        ctx.beginPath(); ctx.arc(w*0.78,h*0.18,w*0.15,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#6c5ce7';
+        ctx.beginPath(); ctx.moveTo(0,h*0.62); ctx.lineTo(w*0.3,h*0.2); ctx.lineTo(w*0.65,h*0.62); ctx.fill();
+        ctx.fillStyle='#a29bfe';
+        ctx.beginPath(); ctx.moveTo(w*0.25,h*0.62); ctx.lineTo(w*0.55,h*0.28); ctx.lineTo(w,h*0.62); ctx.fill();
+        ctx.fillStyle='#5b4ccc';
+        ctx.beginPath(); ctx.moveTo(w*0.5,h*0.62); ctx.lineTo(w*0.75,h*0.35); ctx.lineTo(w,h*0.62); ctx.fill();
+        const g=ctx.createLinearGradient(0,h*0.62,0,h);
+        g.addColorStop(0,'#00b894'); g.addColorStop(1,'#55efc4');
+        ctx.fillStyle=g; ctx.fillRect(0,h*0.62,w,h*0.38);
+        [[0.1,0.75],[0.3,0.8],[0.6,0.73],[0.8,0.78]].forEach(([px,py])=>{
+          ctx.fillStyle='#fd79a8';
+          for(let a=0;a<6;a++){
+            ctx.beginPath();
+            ctx.arc(w*px+Math.cos(a*Math.PI/3)*w*0.025, h*py+Math.sin(a*Math.PI/3)*w*0.025, w*0.015, 0, Math.PI*2); ctx.fill();
+          }
+          ctx.fillStyle='#ffeaa7';
+          ctx.beginPath(); ctx.arc(w*px,h*py,w*0.015,0,Math.PI*2); ctx.fill();
+        });
+        return c;
+      }
+
+      function genCity(w, h) {
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        const sky=ctx.createLinearGradient(0,0,0,h*0.55);
+        sky.addColorStop(0,'#1a1a2e'); sky.addColorStop(1,'#16213e');
+        ctx.fillStyle=sky; ctx.fillRect(0,0,w,h);
+        ctx.fillStyle='rgba(255,255,255,0.8)';
+        [[0.1,0.05],[0.3,0.08],[0.5,0.04],[0.7,0.09],[0.9,0.06],[0.2,0.12],[0.6,0.11],[0.85,0.13]].forEach(([px,py])=>{
+          ctx.beginPath(); ctx.arc(w*px,h*py,w*0.004,0,Math.PI*2); ctx.fill();
+        });
+        ctx.fillStyle='#ffeaa7';
+        ctx.beginPath(); ctx.arc(w*0.82,h*0.1,w*0.07,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#1a1a2e';
+        ctx.beginPath(); ctx.arc(w*0.82+w*0.03,h*0.1-w*0.02,w*0.06,0,Math.PI*2); ctx.fill();
+        const bldgs=[
+          {x:0.03,w:0.13,h:0.48,c:'#2d3436',win:'rgba(255,240,180,0.7)'},
+          {x:0.18,w:0.10,h:0.38,c:'#4a4e69',win:'rgba(180,220,255,0.6)'},
+          {x:0.30,w:0.15,h:0.60,c:'#34495e',win:'rgba(255,220,150,0.7)'},
+          {x:0.47,w:0.09,h:0.35,c:'#5d4e6d',win:'rgba(200,180,255,0.6)'},
+          {x:0.58,w:0.13,h:0.52,c:'#2c3e50',win:'rgba(255,200,200,0.5)'},
+          {x:0.73,w:0.08,h:0.42,c:'#7f5539',win:'rgba(200,255,220,0.6)'},
+          {x:0.83,w:0.14,h:0.55,c:'#1a3a4a',win:'rgba(255,255,180,0.7)'},
+        ];
+        bldgs.forEach(b=>{
+          ctx.fillStyle=b.c;
+          ctx.fillRect(b.x*w,(1-b.h)*h,b.w*w,b.h*h);
+          ctx.fillStyle='#e74c3c';
+          ctx.beginPath(); ctx.arc(b.x*w+b.w*w/2,(1-b.h)*h,w*0.008,0,Math.PI*2); ctx.fill();
+          for(let wy=b.h*0.08;wy<b.h-0.06;wy+=b.h*0.1) for(let wx=b.w*0.1;wx<b.w-0.05;wx+=b.w*0.22){
+            ctx.fillStyle=Math.random()>0.3?b.win:'rgba(0,0,0,0.2)';
+            ctx.fillRect((b.x+wx)*w,(1-b.h+wy)*h,w*0.022,h*0.035);
+          }
+        });
+        return c;
+      }
+
+      const genFns = { cat: genCat, landscape: genLandscape, city: genCity };
+      let customImageCanvas = null;
+
+      function computeVariance(canvas, tileVal, gs, srcSize) {
+        const pw = Math.floor(srcSize / gs);
+        const ph = pw;
+        const sx = (tileVal % gs) * pw;
+        const sy = Math.floor(tileVal / gs) * ph;
+        const step = 8;
+        const off = document.createElement('canvas');
+        off.width = pw; off.height = ph;
+        const tmp = off.getContext('2d');
+        tmp.drawImage(canvas, sx, sy, pw, ph, 0, 0, pw, ph);
+        const d = tmp.getImageData(0, 0, pw, ph).data;
+        const samples = [];
+        for (let py = 0; py < ph; py += step) {
+          for (let px = 0; px < pw; px += step) {
+            const i = (py * pw + px) * 4;
+            samples.push([d[i], d[i+1], d[i+2]]);
+          }
+        }
+        if (samples.length < 4) return Infinity;
+        const avg = [0, 0, 0];
+        samples.forEach(([r,g,b]) => { avg[0]+=r; avg[1]+=g; avg[2]+=b; });
+        avg[0] /= samples.length; avg[1] /= samples.length; avg[2] /= samples.length;
+        return samples.reduce((s,[r,g,b]) =>
+          s + (r-avg[0])**2 + (g-avg[1])**2 + (b-avg[2])**2, 0) / samples.length;
+      }
+
+      function getSolidTiles(gs) {
+        const total = gs * gs;
+        const vars = [];
+        for (let i = 0; i < total; i++) {
+          vars.push({ tile: i, v: computeVariance(state.fullImageCanvas, i, gs, SRC_SIZE) });
+        }
+        vars.sort((a, b) => a.v - b.v);
+        const count = Math.min(4, Math.floor(total * 0.25));
+        return vars.slice(0, count).filter(x => x.v < 150).map(x => x.tile);
+      }
+
+      function getBestKey() { return `puzzle_best_${state.gridSize}`; }
+
+      function loadBest() {
+        try {
+          const d = localStorage.getItem(getBestKey());
+          return d ? JSON.parse(d) : null;
+        } catch { return null; }
+      }
+
+      function saveBest(m, t) {
+        const prev = loadBest();
+        const isNew = !prev || m < prev.moves || (m === prev.moves && t < prev.time);
+        if (isNew) {
+          try { localStorage.setItem(getBestKey(), JSON.stringify({ moves: m, time: t })); } catch {}
+        }
+        return isNew;
+      }
+
+      function formatBest(b) {
+        if (!b) return '-';
+        return `${b.moves}步 ${fmt(b.time)}`;
+      }
+
+      function updateBestDisplay() {
+        document.getElementById('bestDisplay').textContent = formatBest(loadBest());
+      }
+
+      function ensureShuffled() {
+        const minSwaps = Math.max(state.gridSize * 3, 10);
+        let wrongCount = 0;
+        state.tiles.forEach((v, i) => { if (v !== i && !state.solidSet.has(v)) wrongCount++; });
+
+        let extraSwaps = 0;
+        const maxExtra = minSwaps;
+        while (wrongCount < minSwaps && extraSwaps < maxExtra) {
+          const positions = [];
+          state.tiles.forEach((v, i) => { if (!state.solidSet.has(i)) positions.push(i); });
+          if (positions.length < 2) break;
+          const a = positions[Math.floor(Math.random() * positions.length)];
+          let b = positions[Math.floor(Math.random() * positions.length)];
+          if (a === b) continue;
+          [state.tiles[a], state.tiles[b]] = [state.tiles[b], state.tiles[a]];
+
+          wrongCount = 0;
+          state.tiles.forEach((v, i) => { if (v !== i && !state.solidSet.has(v)) wrongCount++; });
+          extraSwaps++;
+        }
+
+        if (state.tiles.every((v, i) => state.solidSet.has(v) || v === i)) {
+          const ns = [];
+          state.tiles.forEach((v, i) => { if (!state.solidSet.has(i)) ns.push(i); });
+          if (ns.length >= 2) {
+            const a = ns[0], b = ns[ns.length - 1];
+            [state.tiles[a], state.tiles[b]] = [state.tiles[b], state.tiles[a]];
+          }
+        }
+      }
+
+      function fmt(s) {
+        return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+      }
+
+      function startTimer() {
+        clearInterval(state.timerInterval);
+        state.timerInterval = setInterval(() => {
+          state.seconds++;
+          document.getElementById('timeDisplay').textContent = fmt(state.seconds);
+        }, 1000);
+      }
+
+      function updateStats() {
+        document.getElementById('moveCount').textContent = state.moves;
+        const nonSolidTotal = state.gridSize * state.gridSize - state.solidSet.size;
+        const correct = state.tiles.filter((v, i) => v === i && !state.solidSet.has(v)).length;
+        document.getElementById('correctCount').textContent = `${correct}/${nonSolidTotal}`;
+        const pct = nonSolidTotal > 0 ? (correct / nonSolidTotal * 100) : 0;
+        document.getElementById('progressFill').style.width = pct + '%';
+      }
+
+      function setTilePosition(tileVal, posIdx) {
+        const el = state.tileElMap[tileVal];
+        if (!el) return;
+        const col = posIdx % state.gridSize;
+        const row = Math.floor(posIdx / state.gridSize);
+        const x = col * state.tileSize;
+        const y = row * state.tileSize;
+        el.style.transform = `translate(${x}px, ${y}px)`;
+      }
+
+      function updateBgVisibility() {
+        const bg = document.getElementById('puzzleBg');
+        const hasCorrect = state.tiles.some((v, i) => v === i && !state.solidSet.has(v));
+        bg.classList.toggle('show', hasCorrect);
+      }
+
+      function checkJustPlaced(tileVal, posIdx) {
+        if (tileVal !== posIdx || state.solidSet.has(tileVal)) return;
+        const el = state.tileElMap[tileVal];
+        if (!el || el.classList.contains('correct')) return;
+
+        el.classList.add('just-placed');
+        setTimeout(() => {
+          el.classList.remove('just-placed');
+          el.classList.add('correct');
+        }, 450);
+      }
+
+      function updateUndoButton() {
+        const btn = document.getElementById('undoBtn');
+        btn.disabled = state.moveHistory.length === 0;
+      }
+
+      function areNeighbors(val1, val2) {
+        const gs = state.gridSize;
+        const row1 = Math.floor(val1 / gs);
+        const col1 = val1 % gs;
+        const row2 = Math.floor(val2 / gs);
+        const col2 = val2 % gs;
+        return (row1 === row2 && Math.abs(col1 - col2) === 1) ||
+               (col1 === col2 && Math.abs(row1 - row2) === 1);
+      }
+
+      function getConnectedTiles(startPosIdx) {
+        const gs = state.gridSize;
+        const connected = new Set();
+        const stack = [startPosIdx];
+        
+        while (stack.length > 0) {
+          const posIdx = stack.pop();
+          if (connected.has(posIdx)) continue;
+          
+          const val = state.tiles[posIdx];
+          connected.add(posIdx);
+          
+          const col = posIdx % gs;
+          const row = Math.floor(posIdx / gs);
+          
+          // Check horizontally adjacent: tiles whose values are also horizontally adjacent
+          // e.g. val=5 at posIdx, val=6 at posIdx+1 → they are "relatively correct" neighbors
+          if (col > 0) {
+            const leftPos = posIdx - 1;
+            const leftVal = state.tiles[leftPos];
+            const isRelCorrect = (leftVal === val - 1) && (Math.floor(leftVal / gs) === Math.floor(val / gs));
+            if (!connected.has(leftPos) && isRelCorrect) {
+              stack.push(leftPos);
+            }
+          }
+          
+          if (col < gs - 1) {
+            const rightPos = posIdx + 1;
+            const rightVal = state.tiles[rightPos];
+            const isRelCorrect = (rightVal === val + 1) && (Math.floor(val / gs) === Math.floor(rightVal / gs));
+            if (!connected.has(rightPos) && isRelCorrect) {
+              stack.push(rightPos);
+            }
+          }
+          
+          if (row > 0) {
+            const upPos = posIdx - gs;
+            const upVal = state.tiles[upPos];
+            const isRelCorrect = (upVal === val - gs) && (val % gs === upVal % gs);
+            if (!connected.has(upPos) && isRelCorrect) {
+              stack.push(upPos);
+            }
+          }
+          
+          if (row < gs - 1) {
+            const downPos = posIdx + gs;
+            const downVal = state.tiles[downPos];
+            const isRelCorrect = (downVal === val + gs) && (val % gs === downVal % gs);
+            if (!connected.has(downPos) && isRelCorrect) {
+              stack.push(downPos);
+            }
+          }
+        }
+        
+        return Array.from(connected);
+      }
+
+      function refreshNeighborLines() {
+        const gs = state.gridSize;
+        const ts = state.tileSize;
+
+        // Determine which sides each tile should show a line on
+        const borders = {};
+        for (let row = 0; row < gs; row++) {
+          for (let col = 0; col < gs; col++) {
+            const posIdx = row * gs + col;
+            const val = state.tiles[posIdx];
+            borders[val] = {
+              left: col > 0,
+              right: col < gs - 1,
+              top: row > 0,
+              bottom: row < gs - 1
+            };
+          }
+        }
+
+        // Remove shared lines between tiles where both are in correct position (val === posIdx)
+        for (let row = 0; row < gs; row++) {
+          for (let col = 0; col < gs - 1; col++) {
+            const posIdx = row * gs + col;
+            const val = state.tiles[posIdx];
+            const rightPos = posIdx + 1;
+            const rightVal = state.tiles[rightPos];
+            const bothCorrect = (val === posIdx) && (rightVal === rightPos);
+            if (bothCorrect) {
+              borders[val].right = false;
+              borders[rightVal].left = false;
+            }
+          }
+        }
+        for (let row = 0; row < gs - 1; row++) {
+          for (let col = 0; col < gs; col++) {
+            const posIdx = row * gs + col;
+            const val = state.tiles[posIdx];
+            const downPos = posIdx + gs;
+            const downVal = state.tiles[downPos];
+            const bothCorrect = (val === posIdx) && (downVal === downPos);
+            if (bothCorrect) {
+              borders[val].bottom = false;
+              borders[downVal].top = false;
+            }
+          }
+        }
+
+        // Redraw each tile's canvas with image + border lines
+        const lineColor = '#d0d0d0';
+        const lineWidth = 2;
+        for (let row = 0; row < gs; row++) {
+          for (let col = 0; col < gs; col++) {
+            const posIdx = row * gs + col;
+            const val = state.tiles[posIdx];
+            const el = state.tileElMap[val];
+            if (!el || !el._puzzleCtx) continue;
+
+            const ctx = el._puzzleCtx;
+            const pw = el._puzzlePieceW;
+            const ph = el._puzzlePieceH;
+            const b = borders[val];
+
+            // Redraw image
+            ctx.clearRect(0, 0, pw, ph);
+            ctx.drawImage(state.fullImageCanvas,
+              el._puzzleSrcX, el._puzzleSrcY, pw, ph,
+              0, 0, pw, ph);
+
+            // Draw border lines on canvas edges
+            ctx.fillStyle = lineColor;
+            if (b.left)   ctx.fillRect(0, 0, lineWidth, ph);
+            if (b.right)  ctx.fillRect(pw - lineWidth, 0, lineWidth, ph);
+            if (b.top)    ctx.fillRect(0, 0, pw, lineWidth);
+            if (b.bottom) ctx.fillRect(0, ph - lineWidth, pw, lineWidth);
+
+            // Update position
+            el.style.width = ts + 'px';
+            el.style.height = ts + 'px';
+            el.style.transform = `translate(${col * ts}px, ${row * ts}px)`;
+          }
+        }
+      }
+
+      function refreshCorrectState() {
+        for (let posIdx = 0; posIdx < state.tiles.length; posIdx++) {
+          const val = state.tiles[posIdx];
+          if (state.solidSet.has(val)) continue;
+          const el = state.tileElMap[val];
+          if (!el) continue;
+          if (val === posIdx) {
+            if (!el.classList.contains('correct')) {
+              el.classList.add('just-placed');
+              setTimeout(() => {
+                el.classList.remove('just-placed');
+                el.classList.add('correct');
+              }, 300);
+            }
+          } else {
+            el.classList.remove('correct', 'just-placed', 'wrong', 'correct-flash');
+            el.style.opacity = '';
+          }
+        }
+        refreshNeighborLines();
+      }
+
+      function buildPositionMap() {
+        const grid = document.getElementById('puzzleGrid');
+        const rect = grid.getBoundingClientRect();
+        return { rect, gridPixelSize: state.gridPixelSize, tileSize: state.tileSize, gs: state.gridSize };
+      }
+
+      function tileAtPoint(x, y) {
+        const currentFrame = requestAnimationFrame(() => {});
+        if (!state.posMapCache || currentFrame !== state.posMapFrameId) {
+          state.posMapCache = buildPositionMap();
+          state.posMapFrameId = currentFrame;
+        }
+        const { rect, tileSize: ts, gs } = state.posMapCache;
+        if (!ts || !gs) return null;
+
+        const relX = x - rect.left;
+        const relY = y - rect.top;
+
+        if (relX < 0 || relY < 0 || relX > rect.width || relY > rect.height) return null;
+
+        const col = Math.floor(relX / ts);
+        const row = Math.floor(relY / ts);
+
+        if (col < 0 || col >= gs || row < 0 || row >= gs) return null;
+
+        const posIdx = row * gs + col;
+        const tileVal = state.tiles[posIdx];
+        return state.tileElMap[tileVal] || null;
+      }
+
+      function highlightKbFocus() {
+        document.querySelectorAll('.tile.kb-focus').forEach(t => t.classList.remove('kb-focus'));
+        if (state.kbFocusIdx === -1) return;
+        const val = state.tiles[state.kbFocusIdx];
+        const el = state.tileElMap[val];
+        if (el) el.classList.add('kb-focus');
+      }
+
+      function spawnConfetti() {
+        const cols = ['#6c5ce7','#fd79a8','#00b894','#fdcb6e','#74b9ff','#a29bfe'];
+        for (let i = 0; i < 55; i++) {
+          const el = document.createElement('div');
+          el.className = 'confetti';
+          el.style.left = Math.random() * 100 + 'vw';
+          el.style.background = cols[Math.floor(Math.random() * cols.length)];
+          el.style.animationDuration = (2 + Math.random() * 2) + 's';
+          el.style.animationDelay = Math.random() * 0.5 + 's';
+          el.style.width = (5 + Math.random() * 8) + 'px';
+          el.style.height = (5 + Math.random() * 8) + 'px';
+          document.body.appendChild(el);
+          setTimeout(() => el.remove(), 4500);
+        }
+      }
+
+      function onPointerDown(e) {
+        if (state.isWin) return;
+        e.preventDefault();
+        const tile = e.currentTarget;
+        const tileVal = parseInt(tile.dataset.val);
+        if (tile.classList.contains('correct')) return;
+
+        try { tile.setPointerCapture(e.pointerId); } catch (_) {}
+
+        const posIdx = parseInt(tile.dataset.pos);
+        const connectedTiles = getConnectedTiles(posIdx);
+        
+        const col = posIdx % state.gridSize;
+        const row = Math.floor(posIdx / state.gridSize);
+        const baseX = col * state.tileSize;
+        const baseY = row * state.tileSize;
+
+        const tileData = [];
+        connectedTiles.forEach(pIdx => {
+          const val = state.tiles[pIdx];
+          const el = state.tileElMap[val];
+          const c = pIdx % state.gridSize;
+          const r = Math.floor(pIdx / state.gridSize);
+          tileData.push({
+            posIdx: pIdx,
+            tileVal: val,
+            tileEl: el,
+            baseX: c * state.tileSize,
+            baseY: r * state.tileSize
+          });
+        });
+
+        state.dragging = {
+          tileEl: tile,
+          tileVal: tileVal,
+          posIdx: posIdx,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+          pointerId: e.pointerId,
+          baseX: baseX,
+          baseY: baseY,
+          offsetX: 0,
+          offsetY: 0,
+          connectedTiles: tileData,
+          isGroup: tileData.length > 1
+        };
+        
+        const isGroup = tileData.length > 1;
+        tileData.forEach(t => {
+          t.tileEl.style.transform = `translate(${t.baseX}px, ${t.baseY}px)${isGroup ? '' : ' scale(1.08)'}`;
+          t.tileEl.style.zIndex = '100';
+          t.tileEl.style.boxShadow = '0 8px 30px rgba(108, 92, 231, 0.4)';
+        });
+        tile.addEventListener('pointermove', onPointerMove);
+        tile.addEventListener('pointerup', onPointerUp);
+        tile.addEventListener('pointercancel', onPointerUp);
+      }
+
+      function onPointerMove(e) {
+        if (!state.dragging) return;
+        const dx = Math.abs(e.clientX - state.dragging.startX);
+        const dy = Math.abs(e.clientY - state.dragging.startY);
+        if (dx > 6 || dy > 6) {
+          state.dragging.moved = true;
+          if (state.selectedTile !== null) {
+            const prev = document.querySelector('.tile.selected');
+            if (prev) prev.classList.remove('selected');
+            state.selectedTile = null;
+          }
+        }
+        if (state.dragging.moved) {
+          document.querySelectorAll('.tile').forEach(t => t.classList.remove('swap-target'));
+          const target = tileAtPoint(e.clientX, e.clientY);
+          if (target && !state.dragging.connectedTiles.some(t => t.tileEl === target) && !target.classList.contains('correct')) {
+            target.classList.add('swap-target');
+          }
+          state.dragging.offsetX = e.clientX - state.dragging.startX;
+          state.dragging.offsetY = e.clientY - state.dragging.startY;
+          state.dragging.connectedTiles.forEach(t => {
+            t.tileEl.style.transform = `translate(${t.baseX + state.dragging.offsetX}px, ${t.baseY + state.dragging.offsetY}px)${state.dragging.isGroup ? '' : ' scale(1.08)'}`;
+          });
+        }
+      }
+
+      function onPointerUp(e) {
+        if (!state.dragging) return;
+        const tile = state.dragging.tileEl;
+
+        try { tile.releasePointerCapture(state.dragging.pointerId); } catch (_) {}
+
+        tile.removeEventListener('pointermove', onPointerMove);
+        tile.removeEventListener('pointerup', onPointerUp);
+        tile.removeEventListener('pointercancel', onPointerUp);
+
+        state.dragging.connectedTiles.forEach(t => {
+          t.tileEl.style.zIndex = '';
+          t.tileEl.style.boxShadow = '';
+        });
+
+        document.querySelectorAll('.tile').forEach(t => t.classList.remove('swap-target'));
+
+        const clientX = e.clientX || state.dragging.startX;
+        const clientY = e.clientY || state.dragging.startY;
+
+        if (state.dragging.moved) {
+          const target = tileAtPoint(clientX, clientY);
+          if (target && !state.dragging.connectedTiles.some(t => t.tileEl === target) && !target.classList.contains('correct')) {
+            swapConnectedTiles(state.dragging.connectedTiles, parseInt(target.dataset.pos));
+          } else {
+            state.dragging.connectedTiles.forEach(t => {
+              t.tileEl.style.transform = `translate(${t.baseX}px, ${t.baseY}px)`;
+            });
+            refreshNeighborLines();
+          }
+        } else {
+          state.dragging.connectedTiles.forEach(t => {
+            t.tileEl.style.transform = `translate(${t.baseX}px, ${t.baseY}px)`;
+          });
+          const posIdx = state.dragging.posIdx;
+          if (state.selectedTile === null) {
+            state.selectedTile = posIdx;
+            document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+            tile.classList.add('selected');
+          } else if (state.selectedTile === posIdx) {
+            state.selectedTile = null;
+            tile.classList.remove('selected');
+          } else {
+            const el = document.querySelector('.tile.selected');
+            if (el) el.classList.remove('selected');
+            swapTiles(state.selectedTile, posIdx);
+            state.selectedTile = null;
+          }
+          refreshNeighborLines();
+        }
+        state.dragging = null;
+      }
+
+      function swapConnectedTiles(connectedTiles, targetPosIdx) {
+        const gs = state.gridSize;
+        const ts = state.tileSize;
+
+        const targetCol = targetPosIdx % gs;
+        const targetRow = Math.floor(targetPosIdx / gs);
+        const memberPosSet = new Set(connectedTiles.map(t => t.posIdx));
+
+        // 1. Compute target position for each member
+        const posMapping = {}; // original position -> target position
+        for (const t of connectedTiles) {
+          const offsetCol = (t.posIdx % gs) - (state.dragging.posIdx % gs);
+          const offsetRow = Math.floor(t.posIdx / gs) - Math.floor(state.dragging.posIdx / gs);
+          const newCol = targetCol + offsetCol;
+          const newRow = targetRow + offsetRow;
+
+          if (newCol < 0 || newCol >= gs || newRow < 0 || newRow >= gs) {
+            bounceBack();
+            return;
+          }
+
+          const newPosIdx = newRow * gs + newCol;
+          posMapping[t.posIdx] = newPosIdx;
+        }
+
+        // 2. Check no two members collide
+        const usedTargets = new Set();
+        for (const oldPos in posMapping) {
+          const newPos = posMapping[oldPos];
+          if (usedTargets.has(newPos)) {
+            bounceBack();
+            return;
+          }
+          usedTargets.add(newPos);
+        }
+
+        // 3. Build full permutation: include non-members whose positions are displaced
+        const fullMapping = { ...posMapping };
+        for (const [oldPos, newPos] of Object.entries(posMapping)) {
+          if (!memberPosSet.has(parseInt(newPos))) {
+            // A non-member at newPos is displaced to oldPos
+            fullMapping[newPos] = parseInt(oldPos);
+          }
+        }
+
+        // 4. Decompose into disjoint cycles
+        const visited = new Set();
+        const cycles = [];
+        for (const startPos of Object.keys(fullMapping).map(Number)) {
+          if (visited.has(startPos)) continue;
+          const cycle = [];
+          let current = startPos;
+          while (!visited.has(current) && fullMapping[current] !== undefined) {
+            visited.add(current);
+            cycle.push(current);
+            current = fullMapping[current];
+          }
+          if (cycle.length > 1) cycles.push(cycle);
+        }
+
+        // 5. Save pre-move state for history & execute each cycle
+        const preMoveTiles = [...state.tiles];
+        const historyEntry = [];
+        for (const cycle of cycles) {
+          const lastVal = state.tiles[cycle[cycle.length - 1]];
+          for (let i = cycle.length - 1; i > 0; i--) {
+            state.tiles[cycle[i]] = state.tiles[cycle[i - 1]];
+          }
+          state.tiles[cycle[0]] = lastVal;
+
+          // Record cycle for undo (reverse cycle restores original)
+          historyEntry.push({ cycle: [...cycle], pre: cycle.map(p => preMoveTiles[p]) });
+        }
+
+        // 6. Update all affected elements' dataset.pos and transform
+        const affectedPositions = new Set();
+        for (const cycle of cycles) {
+          cycle.forEach(p => affectedPositions.add(p));
+        }
+        for (const posIdx of affectedPositions) {
+          const val = state.tiles[posIdx];
+          const el = state.tileElMap[val];
+          if (el) {
+            el.dataset.pos = posIdx;
+            el.style.boxShadow = '';
+            const col = posIdx % gs;
+            const row = Math.floor(posIdx / gs);
+            el.style.transform = `translate(${col * ts}px, ${row * ts}px)`;
+          }
+        }
+
+        // 7. Record history and update
+        if (historyEntry.length > 0) {
+          state.moveHistory.push({ groupCycles: historyEntry });
+          if (state.moveHistory.length > MAX_HISTORY) state.moveHistory.shift();
+          updateUndoButton();
+          state.moves++;
+        }
+
+        refreshNeighborLines();
+        updateStats();
+        updateBgVisibility();
+        checkWin();
+
+        function bounceBack() {
+          state.dragging.connectedTiles.forEach(t => {
+            t.tileEl.style.transform = `translate(${t.baseX}px, ${t.baseY}px)`;
+          });
+          refreshNeighborLines();
+        }
+      }
+
+      function swapTiles(srcIdx, tgtIdx) {
+        if (srcIdx === tgtIdx) return;
+
+        const valA = state.tiles[srcIdx];
+        const valB = state.tiles[tgtIdx];
+
+        state.moveHistory.push({ srcIdx, tgtIdx, valA, valB });
+        if (state.moveHistory.length > MAX_HISTORY) state.moveHistory.shift();
+        updateUndoButton();
+
+        state.tiles[srcIdx] = valB;
+        state.tiles[tgtIdx] = valA;
+
+        const elA = state.tileElMap[valA];
+        const elB = state.tileElMap[valB];
+        elA.dataset.pos = tgtIdx;
+        elB.dataset.pos = srcIdx;
+
+        setTilePosition(valA, tgtIdx);
+        setTilePosition(valB, srcIdx);
+
+        state.moves++;
+
+        requestAnimationFrame(() => {
+          checkJustPlaced(valA, tgtIdx);
+          checkJustPlaced(valB, srcIdx);
+        });
+        
+        refreshNeighborLines();
+        updateStats();
+        updateBgVisibility();
+        checkWin();
+      }
+
+      function undoMove() {
+        if (state.moveHistory.length === 0 || state.isWin) return;
+        const last = state.moveHistory.pop();
+
+        if (last.groupCycles) {
+          // Undo group move: restore each cycle's pre-move values
+          for (const { cycle, pre } of last.groupCycles) {
+            for (let i = 0; i < cycle.length; i++) {
+              state.tiles[cycle[i]] = pre[i];
+            }
+          }
+          // Update all affected elements
+          const affected = new Set();
+          for (const { cycle } of last.groupCycles) {
+            cycle.forEach(p => affected.add(p));
+          }
+          for (const posIdx of affected) {
+            const val = state.tiles[posIdx];
+            const el = state.tileElMap[val];
+            if (el) {
+              el.dataset.pos = posIdx;
+              const gs = state.gridSize;
+              const ts = state.tileSize;
+              const col = posIdx % gs;
+              const row = Math.floor(posIdx / gs);
+              el.style.transform = `translate(${col * ts}px, ${row * ts}px)`;
+            }
+          }
+          refreshCorrectState();
+        } else {
+          // Undo single swap
+          state.tiles[last.srcIdx] = last.valA;
+          state.tiles[last.tgtIdx] = last.valB;
+
+          const elA = state.tileElMap[last.valA];
+          const elB = state.tileElMap[last.valB];
+          elA.dataset.pos = last.srcIdx;
+          elB.dataset.pos = last.tgtIdx;
+
+          setTilePosition(last.valA, last.srcIdx);
+          setTilePosition(last.valB, last.tgtIdx);
+
+          refreshCorrectState();
+        }
+
+        state.moves = Math.max(0, state.moves - 1);
+        updateStats();
+        updateBgVisibility();
+        updateUndoButton();
+      }
+
+      function showHint() {
+        if (state.isWin || state.hintCooldown) return;
+
+        const btn = document.querySelector('.hint-btn');
+        btn.disabled = true;
+        state.hintCooldown = true;
+
+        // Show reference image
+        document.querySelector('.preview-panel').classList.add('hint-visible');
+
+        // Show numbers
+        document.querySelectorAll('.num-badge').forEach(el => {
+          el.classList.remove('hidden');
+        });
+
+        const bg = document.getElementById('puzzleBg');
+        bg.classList.add('hint-mode');
+        document.querySelectorAll('.tile:not(.correct)').forEach(el => {
+          el.style.opacity = '0.25';
+        });
+        clearTimeout(state.hintTimeout);
+        state.hintTimeout = setTimeout(() => {
+          bg.classList.remove('hint-mode');
+          document.querySelectorAll('.tile:not(.correct)').forEach(el => {
+            el.style.opacity = '';
+          });
+          // Hide reference image
+          document.querySelector('.preview-panel').classList.remove('hint-visible');
+          // Hide numbers back to user's preference
+          if (!state.showNumbers) {
+            document.querySelectorAll('.num-badge').forEach(el => {
+              el.classList.add('hidden');
+            });
+          }
+          setTimeout(() => {
+            state.hintCooldown = false;
+            btn.disabled = false;
+          }, 3000);
+        }, 1800);
+      }
+
+      function toggleNumbers() {
+        state.showNumbers = !state.showNumbers;
+        document.querySelectorAll('.num-badge').forEach(el => {
+          el.classList.toggle('hidden', !state.showNumbers);
+        });
+      }
+
+      function verifyTiles() {
+        if (state.isWin) return;
+        const wrongEls = [];
+        document.querySelectorAll('.tile').forEach(el => {
+          el.classList.remove('wrong', 'correct-flash');
+        });
+        state.tiles.forEach((tileVal, posIdx) => {
+          if (state.solidSet.has(tileVal)) return;
+          if (tileVal !== posIdx) {
+            const el = state.tileElMap[tileVal];
+            if (el) {
+              el.classList.add('wrong');
+              wrongEls.push(el);
+            }
+          }
+        });
+        if (wrongEls.length === 0) return;
+        setTimeout(() => {
+          wrongEls.forEach(el => {
+            el.classList.remove('wrong');
+            el.classList.add('correct-flash');
+          });
+          setTimeout(() => {
+            wrongEls.forEach(el => el.classList.remove('correct-flash'));
+          }, 800);
+        }, 1200);
+      }
+
+      function checkWin() {
+        if (state.isWin) return;
+        const allCorrect = state.tiles.every((v, i) => {
+          if (state.solidSet.has(v)) return true;
+          return v === i;
+        });
+        if (!allCorrect) return;
+
+        state.isWin = true;
+        clearInterval(state.timerInterval);
+        clearTimeout(state.hintTimeout);
+
+        document.querySelectorAll('.tile.wrong, .tile.correct-flash, .tile.selected, .tile.kb-focus').forEach(el => {
+          el.classList.remove('wrong', 'correct-flash', 'selected', 'kb-focus');
+          el.style.opacity = '';
+        });
+        state.selectedTile = null;
+        state.kbFocusIdx = -1;
+
+        const isNewRecord = saveBest(state.moves, state.seconds);
+        updateBestDisplay();
+
+        setTimeout(() => {
+          document.getElementById('winMoves').textContent = state.moves;
+          document.getElementById('winTime').textContent = fmt(state.seconds);
+          const best = loadBest();
+          document.getElementById('winBest').textContent = formatBest(best);
+          document.getElementById('winNewRecord').classList.toggle('show', isNewRecord);
+          document.getElementById('winOverlay').classList.add('show');
+          spawnConfetti();
+        }, 500);
+      }
+
+      function createTiles() {
+        const grid = document.getElementById('puzzleGrid');
+        const bgImg = document.getElementById('puzzleBg');
+        
+        grid.querySelectorAll('.tile').forEach(el => {
+          el.removeEventListener('pointerdown', onPointerDown);
+          el.remove();
+        });
+        state.tileElMap = {};
+
+        bgImg.src = state.imgDataUrl;
+        updateBgVisibility();
+
+        const total = state.gridSize * state.gridSize;
+        const pieceW = Math.floor(SRC_SIZE / state.gridSize);
+        const pieceH = pieceW;
+
+        for (let tileVal = 0; tileVal < total; tileVal++) {
+          const posIdx = state.tiles.indexOf(tileVal);
+          const el = document.createElement('div');
+          el.className = 'tile';
+          el.tabIndex = 0;
+          el.setAttribute('role', 'gridcell');
+          el.setAttribute('aria-label', `拼图块 ${tileVal + 1}`);
+          if (state.solidSet.has(tileVal)) el.classList.add('solid-tile');
+          el.dataset.val = tileVal;
+          el.dataset.pos = posIdx;
+          el.style.width = state.tileSize + 'px';
+          el.style.height = state.tileSize + 'px';
+
+          if (posIdx === tileVal && !state.solidSet.has(tileVal)) {
+            el.classList.add('correct');
+          }
+
+          const tc = document.createElement('canvas');
+          tc.width = pieceW; tc.height = pieceH;
+          tc.style.width = '100%'; tc.style.height = '100%';
+          tc.style.display = 'block';
+          el.appendChild(tc);
+
+          // Store canvas context and source rect for redrawing lines
+          el._puzzleCanvas = tc;
+          el._puzzleCtx = tc.getContext('2d');
+          el._puzzleSrcX = (tileVal % state.gridSize) * pieceW;
+          el._puzzleSrcY = Math.floor(tileVal / state.gridSize) * pieceH;
+          el._puzzlePieceW = pieceW;
+          el._puzzlePieceH = pieceH;
+
+          const badge = document.createElement('span');
+          badge.className = 'num-badge' + (state.showNumbers ? '' : ' hidden');
+          badge.textContent = tileVal + 1;
+          el.appendChild(badge);
+
+          const hint = document.createElement('div');
+          hint.className = 'swap-hint';
+          el.appendChild(hint);
+
+          el.addEventListener('pointerdown', onPointerDown);
+
+          grid.appendChild(el);
+          state.tileElMap[tileVal] = el;
+
+          el.classList.add('no-transition');
+          setTilePosition(tileVal, posIdx);
+          el.offsetHeight;
+          el.classList.remove('no-transition');
+        }
+      }
+
+      function init() {
+        state.isWin = false;
+        clearInterval(state.timerInterval);
+        clearTimeout(state.hintTimeout);
+        state.seconds = 0;
+        state.moves = 0;
+        state.selectedTile = null;
+        state.kbFocusIdx = -1;
+
+        state.hintCooldown = false;
+        const hintBtn = document.querySelector('.hint-btn');
+        if (hintBtn) hintBtn.disabled = false;
+
+        state.gridSize = parseInt(document.getElementById('difficulty').value);
+        const key = document.getElementById('imageSelect').value;
+
+        if (key === 'custom' && customImageCanvas) {
+          state.fullImageCanvas = customImageCanvas;
+        } else {
+          state.fullImageCanvas = genFns[key] ? genFns[key](SRC_SIZE, SRC_SIZE) : genFns['cat'](SRC_SIZE, SRC_SIZE);
+        }
+        state.imgDataUrl = state.fullImageCanvas.toDataURL();
+        document.getElementById('previewImg').src = state.imgDataUrl;
+
+        const availableWidth = Math.min(window.innerWidth - 32, window.innerHeight - 240);
+        const maxWidth = Math.min(720, availableWidth * 0.92);
+        state.gridPixelSize = maxWidth;
+        state.tileSize = Math.floor(state.gridPixelSize / state.gridSize);
+        state.gridPixelSize = state.tileSize * state.gridSize;
+
+        const grid = document.getElementById('puzzleGrid');
+        grid.style.width = state.gridPixelSize + 'px';
+        grid.style.height = state.gridPixelSize + 'px';
+
+        const total = state.gridSize * state.gridSize;
+        state.tiles = Array.from({ length: total }, (_, i) => i);
+
+        state.solidSet = new Set(getSolidTiles(state.gridSize));
+
+        state.moveHistory = [];
+        updateUndoButton();
+
+        const nonSolid = state.tiles.filter((_, i) => !state.solidSet.has(i));
+        for (let i = nonSolid.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [nonSolid[i], nonSolid[j]] = [nonSolid[j], nonSolid[i]];
+        }
+        const result = [...state.tiles];
+        let nsIdx = 0;
+        for (let pos = 0; pos < total; pos++) {
+          if (state.solidSet.has(pos)) {
+            result[pos] = pos;
+          } else {
+            result[pos] = nonSolid[nsIdx++];
+          }
+        }
+        state.tiles = result;
+
+        ensureShuffled();
+
+        createTiles();
+        setTimeout(refreshNeighborLines, 50);
+        updateStats();
+        updateBestDisplay();
+        startTimer();
+        document.getElementById('winOverlay').classList.remove('show');
+        document.getElementById('puzzleBg').classList.remove('hint-mode');
+        document.querySelector('.preview-panel').classList.remove('hint-visible');
+      }
+
+      function initEventListeners() {
+        document.addEventListener('DOMContentLoaded', () => {
+          init();
+          document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+              const img = new Image();
+              img.onload = function() {
+                const size = SRC_SIZE;
+                const c = document.createElement('canvas');
+                c.width = size; c.height = size;
+                const ctx = c.getContext('2d');
+                const shorter = Math.min(img.width, img.height);
+                const sx = (img.width - shorter) / 2;
+                const sy = (img.height - shorter) / 2;
+                ctx.drawImage(img, sx, sy, shorter, shorter, 0, 0, size, size);
+                customImageCanvas = c;
+                const opt = document.getElementById('customOption');
+                opt.style.display = '';
+                opt.textContent = '📷 ' + file.name.substring(0, 10) + (file.name.length > 10 ? '…' : '');
+                document.getElementById('imageSelect').value = 'custom';
+                init();
+              };
+              img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+            this.value = '';
+          });
+        });
+
+        document.getElementById('difficulty').addEventListener('change', init);
+        document.getElementById('imageSelect').addEventListener('change', init);
+        document.getElementById('winOverlay').addEventListener('click', e => {
+          if (e.target === document.getElementById('winOverlay'))
+            document.getElementById('winOverlay').classList.remove('show');
+        });
+
+        document.addEventListener('keydown', e => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+            undoMove();
+            return;
+          }
+
+          if (state.isWin) return;
+
+          const total = state.gridSize * state.gridSize;
+
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            const available = [];
+            state.tiles.forEach((v, i) => { if (!state.solidSet.has(v) && v !== i) available.push(i); });
+            if (available.length === 0) return;
+            if (state.kbFocusIdx === -1) {
+              state.kbFocusIdx = available[0];
+            } else {
+              const curPos = available.indexOf(state.kbFocusIdx);
+              if (e.shiftKey) {
+                state.kbFocusIdx = available[(curPos - 1 + available.length) % available.length];
+              } else {
+                state.kbFocusIdx = available[(curPos + 1) % available.length];
+              }
+            }
+            highlightKbFocus();
+            return;
+          }
+
+          if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            if (state.kbFocusIdx === -1) {
+              const first = state.tiles.findIndex((v, i) => !state.solidSet.has(v) && v !== i);
+              if (first >= 0) { state.kbFocusIdx = first; highlightKbFocus(); }
+              return;
+            }
+
+            let newRow = Math.floor(state.kbFocusIdx / state.gridSize);
+            let newCol = state.kbFocusIdx % state.gridSize;
+            if (e.key === 'ArrowUp') newRow--;
+            if (e.key === 'ArrowDown') newRow++;
+            if (e.key === 'ArrowLeft') newCol--;
+            if (e.key === 'ArrowRight') newCol++;
+
+            if (newRow < 0 || newRow >= state.gridSize || newCol < 0 || newCol >= state.gridSize) return;
+            const newIdx = newRow * state.gridSize + newCol;
+
+            if (e.shiftKey && newIdx !== state.kbFocusIdx) {
+              swapTiles(state.kbFocusIdx, newIdx);
+              state.kbFocusIdx = newIdx;
+              highlightKbFocus();
+            } else {
+              state.kbFocusIdx = newIdx;
+              highlightKbFocus();
+            }
+            return;
+          }
+
+          if ((e.key === 'Enter' || e.key === ' ') && state.kbFocusIdx !== -1) {
+            e.preventDefault();
+            if (state.selectedTile === null) {
+              state.selectedTile = state.kbFocusIdx;
+              document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+              const val = state.tiles[state.kbFocusIdx];
+              if (state.tileElMap[val]) state.tileElMap[val].classList.add('selected');
+            } else if (state.selectedTile === state.kbFocusIdx) {
+              state.selectedTile = null;
+              document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+            } else {
+              const el = document.querySelector('.tile.selected');
+              if (el) el.classList.remove('selected');
+              swapTiles(state.selectedTile, state.kbFocusIdx);
+              state.selectedTile = null;
+            }
+            return;
+          }
+
+          if (e.key === 'Escape') {
+            state.selectedTile = null;
+            state.kbFocusIdx = -1;
+            document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+            document.querySelectorAll('.tile.kb-focus').forEach(t => t.classList.remove('kb-focus'));
+            return;
+          }
+        });
+      }
+
+      initEventListeners();
+
+      return {
+        init,
+        undoMove,
+        showHint,
+        toggleNumbers,
+        verifyTiles
+      };
+    })();
+  </script>
+</body>
+</html>
